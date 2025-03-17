@@ -1,0 +1,103 @@
+version: '3.9'
+
+services:
+  # Основное приложение
+  backend-app:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile
+    image: backend-app:latest
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      - database
+    networks:
+      - backend-network
+
+
+  # Бэкенд с правами на чтение (1-й инстанс)
+  backend-app-readonly-1:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile
+    image: backend-app-readonly-1:latest
+    ports:
+      - "8081:8080"
+    env_file:
+      - .env
+    environment:
+      - READ_ONLY=true  # Установите переменную окружения для режима только для чтения
+    depends_on:
+      - database
+    networks:
+      - backend-network
+  backend-app-readonly-2:
+    build:
+      context: ./backend-app
+      dockerfile: Dockerfile
+    image: backend-app-readonly-2:latest
+    ports:
+      - "8082:8080"
+    env_file:
+      - .env
+    environment:
+      - READ_ONLY=true  # Установите переменную окружения для режима только для чтения
+    depends_on:
+      - database
+    networks:
+      - backend-network
+
+
+  # PostgreSQL
+  database:
+    image: postgres:15
+    ports:
+      - "5432"
+    volumes:
+      - ./init_db:/docker-entrypoint-initdb.d
+      - db_data:/var/lib/postgresql/data
+    env_file:
+      - .env
+    networks:
+      - backend-network
+  # Nginx
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"    # HTTP
+      - "443:443"  # HTTPS
+    volumes:
+      - ./nginx/conf.d/:/etc/nginx/conf.d  # Монтируем конфиг-файлы для Nginx
+      - ./nginx/ssl/:/etc/nginx/ssl  # Монтируем ключи SSL
+      - ./static:/usr/share/nginx/html  # Статика (index.html и image.png)
+    depends_on:
+      - database
+      - backend-app
+      - backend-app-readonly-1
+      - backend-app-readonly-2
+    networks:
+      - backend-network
+  # pgAdmin
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    env_file:
+      - .env
+    ports:
+      - "82:80"  # Локальный порт для доступа
+    depends_on:
+      - database
+      - nginx
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin  # Указываем volume для сохранения данных
+    networks:
+      - backend-network
+volumes:
+  db_data:
+  pgadmin-data:
+
+networks:
+  backend-network:
+    driver: bridge
